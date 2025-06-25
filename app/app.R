@@ -12,24 +12,23 @@
 # tool to explore specific gene binding sites.
 #
 #
-# --- FILE STRUCTURE INSTRUCTIONS ---
+# --- DIRECTORY STRUCTURE (for shinylive) ---
 #
-# To run this app, please ensure your directory structure is as follows:
-#
-# /your_app_directory/
-# |-- app.R          (this file)
-# |-- full_data.rds  (your main data frame, saved as an RDS file)
+# /app_root/
+# |-- app.R         (this file)
+# |-- data/
+# |   |-- full_data.rds
+# |   |-- target_gene_names.RDS  
+# |   |-- plots/                 
+# |   |   |-- pros.RDS
+# |   |   |-- GeneB.RDS
+# |   |   |-- ...
 # |
-# |-- www/           (a folder named 'www' for static files)
-# |   |-- science_advances_logo.png (logo for the journal)
-# |   |-- intro_image_1.png         (first image for introduction)
-# |   |-- intro_image_2.png         (second image for introduction)
-# |   |-- intro_image_3.png         (third image for introduction)
-# |
-# |-- plots/         (a folder named 'plots' for pre-generated ggplots)
-# |   |-- GENESYMBOL_1.png  (e.g., FUS.png, TARDBP.png)
-# |   |-- GENESYMBOL_2.png
-# |   |-- ...
+# |-- www/          
+# |   |-- science_advances_logo.png 
+# |   |-- intro_image_1.png         
+# |   |-- intro_image_2.png         
+# |   |-- intro_image_3.png         
 #
 # ==============================================================================
 
@@ -40,18 +39,17 @@ library(shiny)
 library(DT)
 library(dplyr)
 library(ggplot2)
-
+library(grid)
 
 # 2. LOAD DATA
 # ------------------------------------------------------------------------------
-# Load your primary dataset. This should be a data frame.
-# The `tryCatch` block prevents the app from crashing if the file is not found.
+# Load the main dataset
 full_data <- tryCatch({
-  readRDS("full_data.rds")
+  readRDS("data/full_data.rds")
 }, error = function(e) {
   # Create a placeholder dataframe if the file is missing
   data.frame(
-    Gene_Symbol = c("GeneA", "GeneB", "GeneC"),
+    gene_name = c("pros", "GeneB", "GeneC"), # Ensure this column exists
     chromosome = c("chr1", "chr2", "chrX"),
     log2FC = c(1.5, -0.5, 2.1),
     p_value = c(0.001, 0.2, 0.0005),
@@ -61,15 +59,44 @@ full_data <- tryCatch({
   )
 })
 
+# Load the character vector of gene names for the dropdown menu.
+# This is more efficient for shinylive than scanning a directory.
+gene_choices <- tryCatch({
+  readRDS("data/target_gene_names.RDS")
+}, error = function(e) {
+  # Create a placeholder vector if the file is missing
+  c("pros", "GeneB", "GeneC")
+})
+
 
 # 3. DEFINE UI (USER INTERFACE)
 # ------------------------------------------------------------------------------
 ui <- navbarPage(
-  title = "Imp Syp iCLIP targetss",
+  title = "Imp Syp iCLIP targets",
   collapsible = TRUE,
   
   # --- Main Page Tab ---
   tabPanel("Data",
+           # --- Custom CSS Styling ---
+           tags$head(
+             tags$style(HTML("
+        /* Target the full data table and its components */
+        #full_data_table .table td, 
+        #full_data_table .table th {
+          font-size: 90%; /* Adjust data cell and header font size */
+        }
+
+        #full_data_table .form-control {
+           font-size: 90%; /* Adjust column filter input font size */
+        }
+        
+        /* Target the wrapper for global search, pagination, etc. */
+        .dataTables_wrapper {
+          font-size: 90%; /* Adjust font size for table controls */
+        }
+      "))
+           ),
+           
            sidebarLayout(
              # --- Sidebar Panel ---
              sidebarPanel(
@@ -83,7 +110,6 @@ ui <- navbarPage(
                    tags$strong("Imp/IGF2BP and Syp/SYNCRIP temporal RNA interactomes uncover combinatorial networks of regulators of Drosophila brain development")
                  ),
                  tags$p("Lee JY, et al. (2025)"),
-                 # hr(),
                  tags$a(
                    href = "https://www.science.org/doi/10.1126/sciadv.adr6682", 
                    target = "_blank",
@@ -103,7 +129,6 @@ ui <- navbarPage(
                  h4("Contact"),
                  tags$p("Jeffrey Y Lee", tags$a(href = "mailto:jeff.lee@glasgow.ac.uk", icon("envelope"), "Email", target = "_blank")),
                  tags$p("Ilan Davis", tags$a(href = "mailto:ilan.davis@glasgow.ac.uk", icon("envelope"), "Email", target = "_blank")),
-                 # hr(),
                  tags$br(),
                  tags$p(
                    tags$a(href = "https://x.com/jefflee1103", icon("x-twitter"), "Twitter", target = "_blank")
@@ -128,69 +153,102 @@ ui <- navbarPage(
                  
                  # Tab 1: Introduction
                  tabPanel("Introduction",
-                          h3("Imp Syp iCLIP Data Explorer"),
-                          p("This web application provides a user-friendly interface to explore the data from our recent study on the RNA-binding proteins (RBPs) IGFP2BP (Imp) and Syncrip (Syp) during larval brain development iCLIP (individual-nucleotide resolution crosslinking and immunoprecipitation) was used to identify the transcriptome-wide binding sites of these proteins across three developmental stages."),
-                          p("Here, you can browse the complete dataset, search for specific genes of interest, and visualise the binding profiles. The goal of this resource is to enhance the reproducibility and accessibility of our findings."),
-                          hr(),
-                          fluidRow(
-                            column(4,
-                                   tags$figure(
-                                     tags$img(src = "intro_image_1.png", width = "100%", style="border: 1px solid #ddd; border-radius: 4px; padding: 5px;"),
-                                     tags$figcaption("Fig. 1: A brief, descriptive caption for the first image, e.g., 'Schematic of the iCLIP experimental workflow.'")
-                                   )
-                            ),
-                            column(4,
-                                   tags$figure(
-                                     tags$img(src = "intro_image_2.png", width = "100%", style="border: 1px solid #ddd; border-radius: 4px; padding: 5px;"),
-                                     tags$figcaption("Fig. 2: Caption for the second image, e.g., 'Volcano plot showing differentially bound transcripts.'")
-                                   )
-                            ),
-                            column(4,
-                                   tags$figure(
-                                     tags$img(src = "intro_image_3.png", width = "100%", style="border: 1px solid #ddd; border-radius: 4px; padding: 5px;"),
-                                     tags$figcaption("Fig. 3: Caption for the third image, e.g., 'Motif analysis of high-confidence binding sites.'")
-                                   )
-                            )
+                          div(style = "max-width: 85%;",
+                              h3("Imp Syp iCLIP Data Explorer"),
+                              p(HTML("This web application provides a user-friendly interface to explore the data from our recent study on the RNA-binding proteins (RBPs) IGFP2BP (Imp) and Syncrip (Syp). Here, you can browse the complete dataset, search for specific genes of interest, and visualise the binding profiles. The goal of this resource is to enhance the reproducibility and accessibility of our findings.")),
+                              hr(),
+                              h4("Question."),
+                              p(HTML("Understanding how the immense complexity of the brain arises from a finite pool of neural stem cells is a central question in developmental neuroscience. A key, evolutionarily conserved strategy for generating this neuronal diversity is temporal patterning, a process where neural stem cells produce different types of neurons in a stereotyped birth order.")),
+                              p(HTML("In the fruit fly, <em>Drosophila melanogaster</em>, post-embryonic brain development critically depends on the opposing expression gradients of two conserved RNA-binding proteins (RBPs): <strong>Imp (IGF2BP)</strong> and <strong>Syp (SYNCRIP)</strong> (<em>Fig.1</em>). As development proceeds, Imp levels decrease while Syp levels rise within neural stem cells (<em>Fig.2</em>). This dynamic interplay is known to regulate the generation of diverse neuronal fates, the timing of cell cycle exit, and even the growth of the brain. However, a comprehensive, system-wide understanding of how Imp and Syp achieve this regulation has been missing. The complete set of messenger RNA (mRNA) molecules they bind to directly <em>in vivo</em>, and how these interactions change over time, remained largely unexplored. This study aimed to fill that critical knowledge gap by mapping the temporal RNA interactomes of both Imp and Syp.")),
+                              tags$br(),
+                              fluidRow(
+                                column(6,
+                                       tags$figure(
+                                         tags$img(src = "intro_image_1.png", width = "100%", style="border: 1px solid #ddd; border-radius: 4px; padding: 5px;"),
+                                         tags$figcaption("Fig. 1: Temporal patterning of RBPs regulates neural diversity generation.")
+                                       )),
+                                column(6,
+                                       tags$figure(
+                                         tags$img(src = "intro_image_2.png", width = "100%", style="border: 1px solid #ddd; border-radius: 4px; padding: 5px;"),
+                                         tags$figcaption("Fig. 2: Imp and Syp expression dynamics across larval brain development.")
+                                       )
+                                )
+                              ),
+                              tags$br(),
+                              hr(),
+                              h4("Experimental approach."),
+                              p(HTML("To identify the direct RNA targets of Imp and Syp, we employed <strong>individual-nucleotide resolution UV cross-linking and immunoprecipitation (iCLIP)</strong> (<em>Fig.3</em>). This powerful technique allows for the precise mapping of protein-RNA interaction sites on a transcriptome-wide scale. This was performed at three key developmental time points—late L1, L2, and wandering L3 larval stages—to capture the changing regulatory landscape as the Imp/Syp gradient progresses.")),
+                              p(HTML("The resulting dataset is a high-resolution, temporal map of the Imp and Syp RNA interactomes throughout a crucial phase of brain development. It reveals a highly overlapping set of target mRNAs that are dynamically regulated over time, providing a rich resource for dissecting the post-transcriptional networks that drive the specification of neuronal identity.")),
+                              tags$br(),
+                              fluidRow(
+                                column(6,
+                                       tags$figure(
+                                         tags$img(src = "intro_image_3.png", width = "100%", style="border: 1px solid #ddd; border-radius: 4px; padding: 5px;"),
+                                         tags$figcaption("Fig. 3: Schematic of the iCLIP experiment workflow")
+                                       )
+                                )
+                              ),
+                              tags$br(),
+                              tags$br(),
+                              tags$br()
                           )
                  ),
                  
                  # Tab 2: Explore Full Data Table
-                 tabPanel("Explore full data table",
-                          h3("Complete iCLIP Dataset"),
-                          p("The table below contains the full set of identified Imp and Syp RNA targets. Use the search boxes at the top of each column to filter the data. You can also sort columns by clicking on the headers."),
+                 tabPanel("Explore Imp/Syp target table",
+                          h3("Complete Imp and Syp iCLIP target dataset"),
+                          p("The table below contains the full set of identified Imp and Syp RNA targets. Use the search boxes at the top of each column to filter the data. You can also sort columns by clicking on the headers. For detailed table with further analyses, please see suplementary files in the original publication."),
                           hr(),
-                          # Column name descriptions
                           div(style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px;",
                               h4("Column Definitions"),
-                              p(HTML("<strong>Gene_Symbol:</strong> The official symbol for the gene associated with the binding site.")),
-                              p(HTML("<strong>chromosome:</strong> The chromosome on which the binding site is located.")),
-                              p(HTML("<strong>log2FC:</strong> The log2 fold change of binding enrichment.")),
-                              p(HTML("<strong>p_value:</strong> The statistical significance of the enrichment.")),
-                              p(HTML("<strong>peak_sequence:</strong> The RNA sequence of the identified peak region.")),
-                              p(HTML("<strong>...:</strong> Add descriptions for your other columns here."))
+                              p(HTML("<strong>stage_RBP:</strong> Larval developmental stage and RNA-binding protein (RBP) used for iCLIP (e.g. 'L1_Imp' means Imp iCLIP targets at the L1 stage.)")),
+                              p(HTML("<strong>gene_id:</strong> Target gene ID.")),
+                              p(HTML("<strong>gene_name:</strong> Target gene name.")),
+                              p(HTML("<strong>avg_iCLIP_tpm:</strong> iCLIP crosslinks normalised to transcripts per million, average of 3 replicates.")),
+                              p(HTML("<strong>max_log2foldchange:</strong> The log2 fold-change of the most enriched binding site in iCLIP compared to size-matched input.")),
+                              p(HTML("<strong>n_binding_site:</strong> The number of RBP binding sites on target RNA.")),
+                              p(HTML("<strong>binding_feature:</strong> The location of RBP binding sites on target RNA feature.")),
+                              p(HTML("<strong>human_homologs:</strong> High confidence human homologs (DIOPT score > 7).")),
+                              p(HTML("<strong>mammalian_imp_target:</strong> Conserved target with mammalian IMP1-3 in human pluripotent stem cells.")),
+                              p(HTML("<strong>mammalian_syp_target:</strong> Conserved target with mammalian SYNCRIP or HNRNPR in rodent neurons."))
                           ),
-                          DT::dataTableOutput("full_data_table")
+                          hr(),
+                          DT::dataTableOutput("full_data_table"),
+                          downloadButton("download_full_data", "Download Full Table (.csv)", class = "btn-primary", style = "margin-top: 15px;"),
+                          tags$br(),
+                          tags$br(),
+                          tags$br()
                  ),
                  
                  # Tab 3: Explore Binding Sites
                  tabPanel("Explore Imp/Syp binding sites",
-                          h3("Visualize Binding Sites for a Specific Gene"),
-                          p("Enter an official gene symbol in the text box below to visualize its pre-computed binding profile and view all associated binding peaks from the dataset."),
+                          h3("Visualise Binding Sites for a Specific Gene"),
+                          p("Select a gene from the dropdown menu (or type to search) and click 'Search' to visualise binding profile of Imp/Syp."),
                           
-                          # Text input for gene search
-                          textInput("gene_search_input", "Enter Gene Symbol:", placeholder = "e.g., FUS"),
+                          fluidRow(
+                            column(4, 
+                                   selectizeInput("gene_search_input", 
+                                                  "Select or type a Gene Symbol:", 
+                                                  choices = gene_choices,
+                                                  selected = "chinmo",
+                                                  # options = list(placeholder = 'e.g., pros')
+                                                  )
+                            ),
+                            column(2, 
+                                   actionButton("search_button", "Search", icon = icon("search"), style="margin-top: 25px;")
+                            )
+                          ),
                           
                           hr(),
                           
-                          # Display area for the plot
                           h4(textOutput("plot_title")),
-                          imageOutput("gene_plot"),
+                          plotOutput("gene_plot", height = "800px"),
                           
                           hr(),
                           
-                          # Display area for the filtered table
                           h4(textOutput("table_title")),
-                          DT::dataTableOutput("filtered_gene_table")
+                          DT::dataTableOutput("filtered_gene_table"),
+                          downloadButton("download_filtered_data", "Download Filtered Table (.csv)", class = "btn-primary", style = "margin-top: 15px;")
                  )
                )
              )
@@ -212,75 +270,95 @@ server <- function(input, output, session) {
         autoWidth = TRUE,
         scrollX = TRUE
       ),
-      filter = 'top', # Adds search boxes to each column
+      filter = 'top',
       rownames = FALSE,
       class = 'cell-border stripe'
     )
   })
+  
+  # Download handler for the full dataset
+  output$download_full_data <- downloadHandler(
+    filename = function() {
+      paste("ImpSyp_iCLIP_full_dataset_", Sys.Date(), ".csv", sep = "")
+    },
+    content = function(file) {
+      write.csv(full_data, file, row.names = FALSE)
+    }
+  )
   
   # --- Server logic for Tab 3: Gene-specific Exploration ---
   
-  # Reactive value for the searched gene, converting to uppercase for consistency
-  searched_gene <- reactive({
-    req(input$gene_search_input) # Ensure input is not empty
-    toupper(trimws(input$gene_search_input))
-  })
-  
-  # Dynamic title for the plot
-  output$plot_title <- renderText({
-    paste("Binding Profile for", searched_gene())
-  })
-  
-  # Dynamic title for the filtered table
-  output$table_title <- renderText({
-    paste("Binding Sites in", searched_gene())
-  })
-  
-  # Render the pre-generated plot image
-  output$gene_plot <- renderImage({
-    # Construct the file path for the plot
-    # Assumes plots are saved as 'GENESYMBOL.png' in the 'plots/' directory
-    image_path <- file.path("plots", paste0(searched_gene(), ".png"))
-    
-    if (!file.exists(image_path)) {
-      # Handle case where plot for the entered gene does not exist
-      # You can create a placeholder "Not Found" image and point to it here
-      # For now, it returns an empty, invisible plot
-      return(list(src = "",
-                  contentType = "image/png",
-                  alt = "Plot not found for the specified gene.",
-                  width = 0, height = 0))
+  selected_gene <- eventReactive(input$search_button, {
+    # Ensure input is not empty before allowing the event to fire
+    if (input$gene_search_input == "") {
+      return(NULL)
     }
-    
-    # Return a list containing information about the image
-    list(src = image_path,
-         contentType = "image/png",
-         alt = paste("Plot for", searched_gene()),
-         width = "100%", # Make the plot responsive to panel width
-         height = "auto")
-    
-  }, deleteFile = FALSE) # IMPORTANT: Set to FALSE as we are using static files
+    input$gene_search_input
+  }, ignoreNULL = FALSE)
   
-  # Render the filtered data table for the searched gene
-  output$filtered_gene_table <- DT::renderDataTable({
-    # `req` ensures that this code only runs when searched_gene() is available
-    req(searched_gene()) 
+  output$plot_title <- renderText({
+    req(selected_gene())
+    paste("iCLIP binding sites of Imp/Syp on", selected_gene(), "transcript.")
+  })
+  
+  output$table_title <- renderText({
+    req(selected_gene())
+    paste("Binding Sites in", selected_gene())
+  })
+  
+  # Render the plot on-demand based on the selected gene
+  output$gene_plot <- renderPlot({
+    gene_name <- selected_gene()
+    req(gene_name)
     
-    # Filter the main dataframe. This assumes you have a 'Gene_Symbol' column.
-    # The `toupper` ensures case-insensitive matching.
-    filtered_df <- full_data %>%
-      filter(toupper(Gene_Symbol) == searched_gene())
+    validate(
+      need(gene_name %in% gene_choices, "Plot not available. Please select a valid gene and click Search.")
+    )
+    
+    # Construct the file path and load the specific RDS file
+    plot_file_path <- file.path("data", "plots", paste0(gene_name, ".RDS"))
+    
+    validate(
+      need(file.exists(plot_file_path), "Plot data file not found. Please contact the administrator.")
+    )
+    
+    grob_to_plot <- readRDS(plot_file_path)
+    grid::grid.draw(grob_to_plot)
+  })
+  
+  # Reactive expression to filter data based on the gene selected via the button
+  filtered_data_reactive <- reactive({
+    gene_name <- selected_gene()
+    req(gene_name)
+    
+    # Correctly filter the data frame using the 'gene_name' column
+    filter(full_data, .data$gene_name == gene_name)
+  })
+  
+  output$filtered_gene_table <- renderDataTable({
+    df <- filtered_data_reactive()
+    
+    validate(
+      need(nrow(df) > 0, "No data to display. Select a gene and click 'Search'.")
+    )
     
     DT::datatable(
-      filtered_df,
-      options = list(
-        pageLength = 10,
-        autoWidth = TRUE
-      ),
+      df,
+      options = list(pageLength = 10, autoWidth = TRUE),
       rownames = FALSE,
       class = 'cell-border stripe'
     )
   })
+  
+  # Download handler for the filtered dataset
+  output$download_filtered_data <- downloadHandler(
+    filename = function() {
+      paste("ImpSyp_iCLIP_filtered_", selected_gene(), "_", Sys.Date(), ".csv", sep = "")
+    },
+    content = function(file) {
+      write.csv(filtered_data_reactive(), file, row.names = FALSE)
+    }
+  )
   
 }
 
